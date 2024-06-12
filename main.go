@@ -40,6 +40,7 @@ func main() {
 	r.PUT("/items/:id", updateItem)
 	r.DELETE("/items/:id", deleteItem)
 	r.OPTIONS("/*path", optionsHandler) // all URLs
+	r.PATCH("/items/:id", patchItem)
 
 	// run the server
 	r.Run(":3000")
@@ -173,4 +174,36 @@ func optionsHandler(c *gin.Context) {
 
 	// success
 	c.Status(http.StatusNoContent)
+}
+
+func patchItem(c *gin.Context) {
+	// retrieving URL id param
+	id, err := strconv.Atoi(c.Param("id"))
+	// invalid id
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID must be a number"})
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+
+	// incorrect input format handling
+	var itemInput JSONItemInput
+	if err := c.ShouldBindJSON(&itemInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// check if id exists
+	oldItem, ok := items[id]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		return
+	}
+
+	// update item from id by concatenating input
+	var updatedItem = Item(string(oldItem) + itemInput.Data)
+	items[id] = updatedItem
+	// return updated item
+	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
 }
