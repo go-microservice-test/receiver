@@ -38,6 +38,7 @@ func main() {
 	r.GET("/items/:id", getItem)
 	r.POST("/items", createItem)
 	r.PUT("/items/:id", updateItem)
+	r.DELETE("/items/:id", deleteItem)
 
 	// run the server
 	r.Run(":3000")
@@ -137,4 +138,27 @@ func updateItem(c *gin.Context) {
 	items[id] = updatedItem
 	// return updated item
 	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
+}
+
+func deleteItem(c *gin.Context) {
+	// retrieving URL id param
+	id, err := strconv.Atoi(c.Param("id"))
+	// invalid id
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID must be a number"})
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+
+	// check if id exists
+	_, ok := items[id]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		return
+	}
+
+	// delete an item
+	delete(items, id)
+	c.Status(http.StatusOK)
 }
