@@ -37,6 +37,7 @@ func main() {
 	r.HEAD("/items", getItemsLength)
 	r.GET("/items/:id", getItem)
 	r.POST("/items", createItem)
+	r.PUT("/items/:id", updateItem)
 
 	// run the server
 	r.Run(":3000")
@@ -90,18 +91,50 @@ func createItem(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var item JSONItemInput
 	// incorrect input format handling
-	if err := c.ShouldBindJSON(&item); err != nil {
+	var itemInput JSONItemInput
+	if err := c.ShouldBindJSON(&itemInput); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// add new item with the correct id
-	var processedItem = Item(item.Data)
-	items[idCounter] = processedItem
+	var item = Item(itemInput.Data)
+	items[idCounter] = item
 	// return created item
-	c.JSON(http.StatusOK, JSONItem{ID: idCounter, Item: processedItem})
+	c.JSON(http.StatusOK, JSONItem{ID: idCounter, Item: item})
 	// update the counter
 	idCounter++
+}
+
+func updateItem(c *gin.Context) {
+	// retrieving URL id param
+	id, err := strconv.Atoi(c.Param("id"))
+	// invalid id
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID must be a number"})
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+
+	// incorrect input format handling
+	var itemInput JSONItemInput
+	if err := c.ShouldBindJSON(&itemInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// check if id exists
+	_, ok := items[id]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		return
+	}
+
+	// update item from id (here created anew)
+	var updatedItem = Item(itemInput.Data)
+	items[id] = updatedItem
+	// return updated item
+	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
 }
