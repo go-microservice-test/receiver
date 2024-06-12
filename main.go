@@ -39,6 +39,7 @@ func main() {
 	r.POST("/items", createItem)
 	r.PUT("/items/:id", updateItem)
 	r.DELETE("/items/:id", deleteItem)
+	r.OPTIONS("/*path", optionsHandler) // all URLs
 
 	// run the server
 	r.Run(":3000")
@@ -160,5 +161,16 @@ func deleteItem(c *gin.Context) {
 
 	// delete an item
 	delete(items, id)
-	c.Status(http.StatusOK)
+	c.Status(http.StatusNoContent)
+}
+
+func optionsHandler(c *gin.Context) {
+	// setting cors headers
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+	c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	c.Header("Access-Control-Max-Age", "86400")
+
+	// success
+	c.Status(http.StatusNoContent)
 }
