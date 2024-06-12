@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -215,7 +217,26 @@ func patchItem(c *gin.Context) {
 }
 
 func connectHandler(c *gin.Context) {
+	if c.Request.Method == "CONNECT" {
+		// extract proxy-tunnel from request
+		host := c.Request.Host
 
+		// parse proxy-tunnel into URL
+		targetURL, err := url.Parse(host)
+		if err != nil {
+			c.String(http.StatusBadRequest, fmt.Sprintf("Failed to parse URL: %s", err))
+			return
+		}
+
+		// create a proxy
+		proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+		// serve connection
+		proxy.ServeHTTP(c.Writer, c.Request)
+	} else {
+		// simply ignore if not connect
+		c.Next()
+	}
 }
 
 func traceHandler(c *gin.Context) {
@@ -235,7 +256,7 @@ func traceHandler(c *gin.Context) {
 		// execute next middleware (404 here)
 		c.Next()
 
-		// get request processing time
+		// send request processing time
 		duration := time.Since(start)
 		c.Header("Content-Type", "message/http")
 		c.JSON(http.StatusOK, gin.H{"result": fmt.Sprintf("Request processed in %v", duration)})
