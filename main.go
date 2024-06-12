@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +33,10 @@ var (
 func main() {
 	// get an engine instance
 	r := gin.Default()
+
+	// middleware for connect and trace handlers
+	r.Use(connectHandler)
+	r.Use(traceHandler)
 
 	// connect routes
 	r.GET("/items", getItems)
@@ -168,7 +174,7 @@ func deleteItem(c *gin.Context) {
 func optionsHandler(c *gin.Context) {
 	// setting cors headers
 	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+	c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH, CONNECT, TRACE")
 	c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	c.Header("Access-Control-Max-Age", "86400")
 
@@ -206,4 +212,35 @@ func patchItem(c *gin.Context) {
 	items[id] = updatedItem
 	// return updated item
 	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
+}
+
+func connectHandler(c *gin.Context) {
+
+}
+
+func traceHandler(c *gin.Context) {
+	if c.Request.Method == "TRACE" {
+		// get receiving time
+		start := time.Now()
+
+		// log the request data
+		fmt.Printf("[%s] %s %s\n", c.Request.Method, c.Request.URL.Path, c.Request.URL.RawQuery)
+
+		// log the request headers
+		fmt.Println("Headers:")
+		for key, value := range c.Request.Header {
+			fmt.Printf("%s: %s\n", key, value)
+		}
+
+		// execute next middleware (404 here)
+		c.Next()
+
+		// get request processing time
+		duration := time.Since(start)
+		c.Header("Content-Type", "message/http")
+		c.JSON(http.StatusOK, gin.H{"result": fmt.Sprintf("Request processed in %v", duration)})
+	} else {
+		// simply ignore if not trace
+		c.Next()
+	}
 }
