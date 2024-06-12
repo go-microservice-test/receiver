@@ -34,6 +34,7 @@ func main() {
 
 	// connect routes
 	r.GET("/items", getItems)
+	r.HEAD("/items", getItemsLength)
 	r.GET("/items/:id", getItem)
 	r.POST("/items", createItem)
 
@@ -52,6 +53,15 @@ func getItems(c *gin.Context) {
 	}
 	// return all items
 	c.JSON(http.StatusOK, resItemList)
+}
+
+func getItemsLength(c *gin.Context) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// set the custom item length header to item length
+	c.Header("X-Item-Length", strconv.Itoa(len(items)))
+	c.Status(http.StatusOK)
 }
 
 func getItem(c *gin.Context) {
