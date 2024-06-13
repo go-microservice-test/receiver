@@ -2,14 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"sync"
-	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // Item - some abstract data holding type.
@@ -37,8 +35,21 @@ func main() {
 	r := gin.Default()
 
 	// middleware for connect and trace handlers
-	r.Use(connectHandler)
-	r.Use(traceHandler)
+	r.Use(func(c *gin.Context) {
+		if c.Request.Method == "CONNECT" {
+			connectHandler(c)
+		} else {
+			c.Next()
+		}
+	})
+	r.Use(func(c *gin.Context) {
+		// trace handler only on /items
+		if c.Request.Method == "TRACE" && c.Request.URL.Path == "/items" {
+			traceHandler(c)
+		} else {
+			c.Next()
+		}
+	})
 
 	// connect routes
 	r.GET("/items", getItems)
@@ -217,51 +228,34 @@ func patchItem(c *gin.Context) {
 }
 
 func connectHandler(c *gin.Context) {
-	if c.Request.Method == "CONNECT" {
-		// extract proxy-tunnel from request
-		host := c.Request.Host
+	// extract proxy-tunnel from request
+	host := c.Request.Host
 
-		// parse proxy-tunnel into URL
-		targetURL, err := url.Parse(host)
-		if err != nil {
-			c.String(http.StatusBadRequest, fmt.Sprintf("Failed to parse URL: %s", err))
-			return
-		}
-
-		// create a proxy
-		proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-		// serve connection
-		proxy.ServeHTTP(c.Writer, c.Request)
-	} else {
-		// simply ignore if not connect
-		c.Next()
+	// parse proxy-tunnel into URL
+	targetURL, err := url.Parse(host)
+	if err != nil {
+		c.String(http.StatusBadRequest, fmt.Sprintf("Failed to parse URL: %s", err))
+		return
 	}
+
+	// create a proxy
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// serve connection
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 func traceHandler(c *gin.Context) {
-	if c.Request.Method == "TRACE" {
-		// get receiving time
-		start := time.Now()
-
-		// log the request data
-		fmt.Printf("[%s] %s %s\n", c.Request.Method, c.Request.URL.Path, c.Request.URL.RawQuery)
-
-		// log the request headers
-		fmt.Println("Headers:")
-		for key, value := range c.Request.Header {
-			fmt.Printf("%s: %s\n", key, value)
-		}
-
-		// execute next middleware (404 here)
-		c.Next()
-
-		// send request processing time
-		duration := time.Since(start)
-		c.Header("Content-Type", "message/http")
-		c.JSON(http.StatusOK, gin.H{"result": fmt.Sprintf("Request processed in %v", duration)})
-	} else {
-		// simply ignore if not trace
-		c.Next()
+	var itemInput JSONItemInput
+	if err := c.ShouldBindJSON(&itemInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+
+	// correct header
+	c.Header("Content-Type", "message/http")
+	// send processed proxy list
+	c.Header("Via", c.GetHeader("Via"))
+	// send body as is
+	c.JSON(http.StatusOK, itemInput)
 }
