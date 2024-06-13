@@ -291,8 +291,6 @@ func patchHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ID must be a number"})
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
 
 	// incorrect input format handling
 	var input struct {
@@ -303,23 +301,32 @@ func patchHandler(c *gin.Context) {
 		return
 	}
 
-	// check if id exists
-	oldAnimal, ok := animals[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
+	mu.Lock()
+	defer mu.Unlock()
+
+	query := `
+			UPDATE animals
+			SET description = $2
+			WHERE id = $1
+		`
+
+	// execute with parameters
+	result, err := db.Exec(query, id, input.Description)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// check rowsAffected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// update animal from id by concatenating input
-	var updatedAnimal = Animal{
-		Name:        oldAnimal.Name,
-		Type:        oldAnimal.Type,
-		Description: input.Description, // change the description
-		isActive:    oldAnimal.isActive,
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	} else {
+		c.Status(http.StatusOK)
 	}
-	animals[id] = updatedAnimal
-	// return updated animal
-	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: updatedAnimal})
 }
 
 func connectHandler(c *gin.Context) {
