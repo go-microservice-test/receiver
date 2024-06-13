@@ -52,8 +52,8 @@ func main() {
 	r.POST("/animals", postHandler)
 	r.PUT("/animals/:id", putHandler)
 	r.DELETE("/animals/:id", deleteHandler)
-	r.OPTIONS("/*path", optionsHandler) // all URLs
-	r.PATCH("/animals/:id", patchHandler)
+	r.OPTIONS("/*path", optionsHandler)               // all URLs
+	r.PATCH("/animals/:id/description", patchHandler) // change only description field
 
 	// run the server
 	r.Run(":3000")
@@ -199,21 +199,28 @@ func patchHandler(c *gin.Context) {
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var animal Animal
-	if err := c.ShouldBindJSON(&animal); err != nil {
+	var input struct {
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// check if id exists
-	_, ok := animals[id]
+	oldAnimal, ok := animals[id]
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	}
 
 	// update animal from id by concatenating input
-	var updatedAnimal = animal
+	var updatedAnimal = Animal{
+		Name:        oldAnimal.Name,
+		Type:        oldAnimal.Type,
+		Description: input.Description, // change the description
+		isActive:    oldAnimal.isActive,
+	}
 	animals[id] = updatedAnimal
 	// return updated animal
 	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: updatedAnimal})
