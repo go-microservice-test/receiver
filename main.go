@@ -205,27 +205,38 @@ func putHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ID must be a number"})
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
-
 	// incorrect input format handling
 	var animal Animal
 	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	mu.Lock()
+	defer mu.Unlock()
 
-	// check if id exists
-	_, ok := animals[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
+	query := `
+		UPDATE animals
+		SET name = $2, type = $3, description = $4, isactive = $5
+		WHERE id = $1
+	`
+
+	// Execute the SQL statement with parameters
+	result, err := db.Exec(query, id, animal.Name, animal.Type, animal.Description, animal.isActive)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Check the number of rows affected by the update
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// update animal from id (here created anew)
-	animals[id] = animal
-	// return updated animal
-	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	} else {
+		c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
+	}
 }
 
 func deleteHandler(c *gin.Context) {
