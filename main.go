@@ -1,10 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
+	"io"
+	"log"
+	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"sync"
@@ -38,13 +39,7 @@ func main() {
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method == "CONNECT" {
 			connectHandler(c)
-		} else {
-			c.Next()
-		}
-	})
-	r.Use(func(c *gin.Context) {
-		// trace handler only on /items
-		if c.Request.Method == "TRACE" && c.Request.URL.Path == "/items" {
+		} else if c.Request.Method == "TRACE" && c.Request.URL.Path == "/items" {
 			traceHandler(c)
 		} else {
 			c.Next()
@@ -228,21 +223,40 @@ func patchItem(c *gin.Context) {
 }
 
 func connectHandler(c *gin.Context) {
-	// extract proxy-tunnel from request
-	host := c.Request.Host
-
-	// parse proxy-tunnel into URL
-	targetURL, err := url.Parse(host)
+	// parse the destination url
+	remote, err := url.Parse("http://" + c.Request.Host)
 	if err != nil {
-		c.String(http.StatusBadRequest, fmt.Sprintf("Failed to parse URL: %s", err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Host URL"})
 		return
 	}
 
-	// create a proxy
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	// connecting to the destination server via tcp
+	destConn, err := net.Dial("tcp", remote.Host)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to connect to destination"})
+		return
+	}
+	defer destConn.Close()
 
-	// serve connection
-	proxy.ServeHTTP(c.Writer, c.Request)
+	// make it callers responsibility to close the connection
+	clientConn, _, err := c.Writer.Hijack()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to hijack the connection"})
+		return
+	}
+	defer clientConn.Close()
+
+	log.Println("TCP connection established. Starting to forward traffic")
+
+	// launch a go-routine to forward traffic
+	go func() {
+		defer clientConn.Close()
+		defer destConn.Close()
+		io.Copy(destConn, clientConn)
+	}()
+
+	io.Copy(clientConn, destConn)
+	log.Println("Connection closed")
 }
 
 func traceHandler(c *gin.Context) {
