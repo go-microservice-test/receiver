@@ -220,12 +220,12 @@ func putHandler(c *gin.Context) {
 		WHERE id = $1
 	`
 
-	// Execute the SQL statement with parameters
+	// execute with parameters
 	result, err := db.Exec(query, id, animal.Name, animal.Type, animal.Description, animal.isActive)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Check the number of rows affected by the update
+	// check rowsAffected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		log.Fatal(err)
@@ -250,16 +250,26 @@ func deleteHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// check if id exists
-	_, ok := animals[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
+	query := `DELETE FROM animals WHERE id = $1`
+
+	// execute with parameters
+	result, err := db.Exec(query, id)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// delete an animal item
-	delete(animals, id)
-	c.Status(http.StatusNoContent)
+	// check rowsAffected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	} else {
+		c.Status(http.StatusNoContent)
+	}
 }
 
 func optionsHandler(c *gin.Context) {
