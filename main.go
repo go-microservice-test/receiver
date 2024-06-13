@@ -11,24 +11,23 @@ import (
 	"sync"
 )
 
-// Item - some abstract data holding type.
-type Item string
-
-// JSONItem - map item processed into JSON parseable object.
-type JSONItem struct {
-	ID   int  `json:"id"`
-	Item Item `json:"data"`
+type Animal struct {
+	Name        string `json:"name"`
+	Type        int    `json:"type"`
+	Description string `json:"description"`
+	isActive    bool   `json:"isactive"`
 }
 
-// JSONItemInput - item input json format
-type JSONItemInput struct {
-	Data string `json:"data"`
+// JSONMap - record processed into json parseable object.
+type JSONMap struct {
+	ID     int    `json:"id"`
+	Animal Animal `json:"data"`
 }
 
 var (
-	items     = make(map[int]Item) // mapping from ID to Item
-	idCounter = 1                  // counter for the ids
-	mu        sync.Mutex           // DB mutex
+	animals   = make(map[int]Animal) // mapping from ID to Animal
+	idCounter = 1                    // counter for the ids
+	mu        sync.Mutex             // DB mutex
 )
 
 func main() {
@@ -39,7 +38,7 @@ func main() {
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method == "CONNECT" {
 			connectHandler(c)
-		} else if c.Request.Method == "TRACE" && c.Request.URL.Path == "/items" {
+		} else if c.Request.Method == "TRACE" && c.Request.URL.Path == "/animals" {
 			traceHandler(c)
 		} else {
 			c.Next()
@@ -47,42 +46,42 @@ func main() {
 	})
 
 	// connect routes
-	r.GET("/items", getItems)
-	r.HEAD("/items", getItemsLength)
-	r.GET("/items/:id", getItem)
-	r.POST("/items", createItem)
-	r.PUT("/items/:id", updateItem)
-	r.DELETE("/items/:id", deleteItem)
+	r.GET("/animals", getHandler)
+	r.HEAD("/animals", headHandler)
+	r.GET("/animals/:id", getByIdHandler)
+	r.POST("/animals", postHandler)
+	r.PUT("/animals/:id", putHandler)
+	r.DELETE("/animals/:id", deleteHandler)
 	r.OPTIONS("/*path", optionsHandler) // all URLs
-	r.PATCH("/items/:id", patchItem)
+	r.PATCH("/animals/:id", patchHandler)
 
 	// run the server
 	r.Run(":3000")
 }
 
-func getItems(c *gin.Context) {
+func getHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	// convert map into JSON parseable format
-	var resItemList []JSONItem
-	for id, item := range items {
-		resItemList = append(resItemList, JSONItem{ID: id, Item: item})
+	var resAnimalList []JSONMap
+	for id, animal := range animals {
+		resAnimalList = append(resAnimalList, JSONMap{ID: id, Animal: animal})
 	}
-	// return all items
-	c.JSON(http.StatusOK, resItemList)
+	// return all animals
+	c.JSON(http.StatusOK, resAnimalList)
 }
 
-func getItemsLength(c *gin.Context) {
+func headHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// set the custom item length header to item length
-	c.Header("X-Item-Length", strconv.Itoa(len(items)))
+	// set the custom item length header to number of records in DB
+	c.Header("X-Item-Length", strconv.Itoa(len(animals)))
 	c.Status(http.StatusOK)
 }
 
-func getItem(c *gin.Context) {
+func getByIdHandler(c *gin.Context) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -93,38 +92,37 @@ func getItem(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// retrieve an item with id
-	item, ok := items[id]
+	// retrieve an animal with id
+	animal, ok := animals[id]
 	// item does not exist
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	}
-	// send the requested item
-	c.JSON(http.StatusOK, JSONItem{ID: id, Item: item})
+	// send the requested animal
+	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
 }
 
-func createItem(c *gin.Context) {
+func postHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var itemInput JSONItemInput
-	if err := c.ShouldBindJSON(&itemInput); err != nil {
+	var animal Animal
+	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// add new item with the correct id
-	var item = Item(itemInput.Data)
-	items[idCounter] = item
-	// return created item
-	c.JSON(http.StatusOK, JSONItem{ID: idCounter, Item: item})
+	// add new animal with the correct id
+	animals[idCounter] = animal
+	// return created animal
+	c.JSON(http.StatusOK, JSONMap{ID: idCounter, Animal: animal})
 	// update the counter
 	idCounter++
 }
 
-func updateItem(c *gin.Context) {
+func putHandler(c *gin.Context) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -136,27 +134,26 @@ func updateItem(c *gin.Context) {
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var itemInput JSONItemInput
-	if err := c.ShouldBindJSON(&itemInput); err != nil {
+	var animal Animal
+	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// check if id exists
-	_, ok := items[id]
+	_, ok := animals[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	}
 
-	// update item from id (here created anew)
-	var updatedItem = Item(itemInput.Data)
-	items[id] = updatedItem
-	// return updated item
-	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
+	// update animal from id (here created anew)
+	animals[id] = animal
+	// return updated animal
+	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
 }
 
-func deleteItem(c *gin.Context) {
+func deleteHandler(c *gin.Context) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -168,14 +165,14 @@ func deleteItem(c *gin.Context) {
 	defer mu.Unlock()
 
 	// check if id exists
-	_, ok := items[id]
+	_, ok := animals[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	}
 
-	// delete an item
-	delete(items, id)
+	// delete an animal item
+	delete(animals, id)
 	c.Status(http.StatusNoContent)
 }
 
@@ -190,7 +187,7 @@ func optionsHandler(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func patchItem(c *gin.Context) {
+func patchHandler(c *gin.Context) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -202,24 +199,24 @@ func patchItem(c *gin.Context) {
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var itemInput JSONItemInput
-	if err := c.ShouldBindJSON(&itemInput); err != nil {
+	var animal Animal
+	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// check if id exists
-	oldItem, ok := items[id]
+	_, ok := animals[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	}
 
-	// update item from id by concatenating input
-	var updatedItem = Item(string(oldItem) + itemInput.Data)
-	items[id] = updatedItem
-	// return updated item
-	c.JSON(http.StatusOK, JSONItem{ID: id, Item: updatedItem})
+	// update animal from id by concatenating input
+	var updatedAnimal = animal
+	animals[id] = updatedAnimal
+	// return updated animal
+	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: updatedAnimal})
 }
 
 func connectHandler(c *gin.Context) {
@@ -260,8 +257,8 @@ func connectHandler(c *gin.Context) {
 }
 
 func traceHandler(c *gin.Context) {
-	var itemInput JSONItemInput
-	if err := c.ShouldBindJSON(&itemInput); err != nil {
+	var animal Animal
+	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -271,5 +268,5 @@ func traceHandler(c *gin.Context) {
 	// send processed proxy list
 	c.Header("Via", c.GetHeader("Via"))
 	// send body as is
-	c.JSON(http.StatusOK, itemInput)
+	c.JSON(http.StatusOK, animal)
 }
