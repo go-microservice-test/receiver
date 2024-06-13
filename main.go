@@ -1,7 +1,10 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	_ "github.com/lib/pq"
 	"io"
 	"log"
 	"net"
@@ -28,6 +31,8 @@ var (
 	animals   = make(map[int]Animal) // mapping from ID to Animal
 	idCounter = 1                    // counter for the ids
 	mu        sync.Mutex             // DB mutex
+	connStr   = "user=nur password= host=localhost port=5432 dbname=nur sslmode=disable"
+	db        *sql.DB
 )
 
 func main() {
@@ -54,6 +59,31 @@ func main() {
 	r.DELETE("/animals/:id", deleteHandler)
 	r.OPTIONS("/*path", optionsHandler)               // all URLs
 	r.PATCH("/animals/:id/description", patchHandler) // change only description field
+
+	// connect to database
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	// Verify the connection
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Connected to the database")
+	// creating table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS animals (
+    	id SERIAL PRIMARY KEY,
+    	name VARCHAR(100),
+    	type INT,
+    	description VARCHAR(500),
+    	isactive BOOLEAN
+    )`)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// run the server
 	r.Run(":3000")
