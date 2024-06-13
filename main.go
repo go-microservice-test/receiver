@@ -28,12 +28,38 @@ type JSONMap struct {
 }
 
 var (
-	animals   = make(map[int]Animal) // mapping from ID to Animal
-	idCounter = 1                    // counter for the ids
-	mu        sync.Mutex             // DB mutex
-	connStr   = "user=nur password= host=localhost port=5432 dbname=nur sslmode=disable"
-	db        *sql.DB
+	animals = make(map[int]Animal) // mapping from ID to Animal
+	mu      sync.Mutex             // DB mutex
+	connStr = "user=nur password= host=localhost port=5432 dbname=nur sslmode=disable"
+	db      *sql.DB
 )
+
+func init() {
+	// connect to database
+	var err error
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Verify the connection
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Connected to the database")
+	// creating table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS animals (
+    	id SERIAL PRIMARY KEY,
+    	name VARCHAR(100),
+    	type INT,
+    	description VARCHAR(500),
+    	isactive BOOLEAN
+    )`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func main() {
 	// get an engine instance
@@ -60,31 +86,6 @@ func main() {
 	r.OPTIONS("/*path", optionsHandler)               // all URLs
 	r.PATCH("/animals/:id/description", patchHandler) // change only description field
 
-	// connect to database
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	// Verify the connection
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Connected to the database")
-	// creating table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS animals (
-    	id SERIAL PRIMARY KEY,
-    	name VARCHAR(100),
-    	type INT,
-    	description VARCHAR(500),
-    	isactive BOOLEAN
-    )`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// run the server
 	r.Run(":3000")
 }
@@ -93,9 +94,24 @@ func getHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// convert map into JSON parseable format
+	// select all records from the animals table
+	rows, err := db.Query("SELECT * FROM animals")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	// convert results into JSON parseable format
 	var resAnimalList []JSONMap
-	for id, animal := range animals {
+	for rows.Next() {
+		var id int
+		var animal Animal
+		// parse it into id and animal
+		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.isActive)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// append to the list
 		resAnimalList = append(resAnimalList, JSONMap{ID: id, Animal: animal})
 	}
 	// return all animals
@@ -106,8 +122,14 @@ func headHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// get count from the animals table
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM animals").Scan(&count)
+	if err != nil {
+		log.Fatal(err)
+	}
 	// set the custom item length header to number of records in DB
-	c.Header("X-Item-Length", strconv.Itoa(len(animals)))
+	c.Header("X-Item-Length", strconv.Itoa(count))
 	c.Status(http.StatusOK)
 }
 
@@ -122,15 +144,30 @@ func getByIdHandler(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// retrieve an animal with id
-	animal, ok := animals[id]
-	// item does not exist
-	if !ok {
+	// select records with specific id
+	query := `SELECT * FROM animals WHERE id = $1`
+	rows, err := db.Query(query, id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	// check if there are any rows returned
+	if !rows.Next() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
+	} else {
+		// return specific animal
+		var animal Animal
+		// parse animal
+		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.isActive)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// send the requested animal
+		c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
+		return
 	}
-	// send the requested animal
-	c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
 }
 
 func postHandler(c *gin.Context) {
@@ -144,12 +181,20 @@ func postHandler(c *gin.Context) {
 		return
 	}
 
-	// add new animal with the correct id
-	animals[idCounter] = animal
+	// prepare sql statement
+	query := `
+        INSERT INTO animals (name, type, description, isactive)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+    `
+	var insertedID int
+	err := db.QueryRow(query, animal.Name, animal.Type, animal.Description, animal.isActive).Scan(&insertedID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// return created animal
-	c.JSON(http.StatusOK, JSONMap{ID: idCounter, Animal: animal})
-	// update the counter
-	idCounter++
+	c.JSON(http.StatusOK, JSONMap{ID: insertedID, Animal: animal})
 }
 
 func putHandler(c *gin.Context) {
