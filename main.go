@@ -4,7 +4,8 @@ import (
 	"database/sql"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
-	db_utils "go-test/db-utils"
+	dbutils "go-test/db-utils"
+	"go-test/models"
 	"io"
 	"log"
 	"net"
@@ -14,17 +15,10 @@ import (
 	"sync"
 )
 
-type Animal struct {
-	Name        string `json:"name"`
-	Type        int    `json:"type"`
-	Description string `json:"description"`
-	IsActive    bool   `json:"isActive"`
-}
-
 // JSONMap - record processed into json parseable object.
 type JSONMap struct {
-	ID     int    `json:"id"`
-	Animal Animal `json:"data"`
+	ID     int           `json:"id"`
+	Animal models.Animal `json:"data"`
 }
 
 var (
@@ -36,7 +30,7 @@ func main() {
 	// load configuration
 	_cfg := LoadConfiguration("config.json")
 	// setup connection
-	db = db_utils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
+	db = dbutils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
 	defer func(db *sql.DB) {
 		err := db.Close()
 		if err != nil {
@@ -93,7 +87,7 @@ func getHandler(c *gin.Context) {
 	var resAnimalList []JSONMap
 	for rows.Next() {
 		var id int
-		var animal Animal
+		var animal models.Animal
 		// parse it into id and animal
 		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
 		if err != nil {
@@ -152,7 +146,7 @@ func getByIdHandler(c *gin.Context) {
 		return
 	} else {
 		// return specific animal
-		var animal Animal
+		var animal models.Animal
 		// parse animal
 		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
 		if err != nil {
@@ -169,7 +163,7 @@ func postHandler(c *gin.Context) {
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var animal Animal
+	var animal models.Animal
 	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -200,7 +194,7 @@ func putHandler(c *gin.Context) {
 		return
 	}
 	// incorrect input format handling
-	var animal Animal
+	var animal models.Animal
 	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -387,7 +381,7 @@ func connectHandler(c *gin.Context) {
 }
 
 func traceHandler(c *gin.Context) {
-	var animal Animal
+	var animal models.Animal
 	if err := c.ShouldBindJSON(&animal); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
