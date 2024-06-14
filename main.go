@@ -5,7 +5,9 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	dbutils "go-test/db-utils"
+	"go-test/middleware"
 	"go-test/models"
+	"go-test/routers"
 	"io"
 	"log"
 	"net"
@@ -14,12 +16,6 @@ import (
 	"strconv"
 	"sync"
 )
-
-// JSONMap - record processed into json parseable object.
-type JSONMap struct {
-	ID     int           `json:"id"`
-	Animal models.Animal `json:"data"`
-}
 
 var (
 	mu sync.Mutex // DB mutex
@@ -40,6 +36,9 @@ func main() {
 	// get an engine instance
 	r := gin.Default()
 
+	r.Use(middleware.ApiMiddleware(db, mu))
+
+	// connect routers
 	// middleware for connect and trace handlers
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method == "CONNECT" {
@@ -50,9 +49,7 @@ func main() {
 			c.Next()
 		}
 	})
-
-	// connect routes
-	r.GET("/animals", getHandler)
+	r.GET("/animals", routers.GetAnimals)
 	r.HEAD("/animals", headHandler)
 	r.GET("/animals/:id", getByIdHandler)
 	r.POST("/animals", postHandler)
@@ -66,39 +63,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func getHandler(c *gin.Context) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// select all records from the animals table
-	rows, err := db.Query("SELECT * FROM animals")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(rows)
-	// convert results into JSON parseable format
-	var resAnimalList []JSONMap
-	for rows.Next() {
-		var id int
-		var animal models.Animal
-		// parse it into id and animal
-		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// append to the list
-		resAnimalList = append(resAnimalList, JSONMap{ID: id, Animal: animal})
-	}
-	// return all animals
-	c.JSON(http.StatusOK, resAnimalList)
 }
 
 func headHandler(c *gin.Context) {
@@ -153,7 +117,7 @@ func getByIdHandler(c *gin.Context) {
 			log.Fatal(err)
 		}
 		// send the requested animal
-		c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
+		c.JSON(http.StatusOK, models.AnimalWithID{ID: id, Animal: animal})
 		return
 	}
 }
@@ -182,7 +146,7 @@ func postHandler(c *gin.Context) {
 	}
 
 	// return created animal
-	c.JSON(http.StatusOK, JSONMap{ID: insertedID, Animal: animal})
+	c.JSON(http.StatusOK, models.AnimalWithID{ID: insertedID, Animal: animal})
 }
 
 func putHandler(c *gin.Context) {
@@ -223,7 +187,7 @@ func putHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	} else {
-		c.JSON(http.StatusOK, JSONMap{ID: id, Animal: animal})
+		c.JSON(http.StatusOK, models.AnimalWithID{ID: id, Animal: animal})
 	}
 }
 

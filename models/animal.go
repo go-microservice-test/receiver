@@ -6,3 +6,9 @@ type Animal struct {
 	Description string `json:"description"`
 	IsActive    bool   `json:"isActive"`
 }
+
+// AnimalWithID - one record processed into json parseable object.
+type AnimalWithID struct {
+	ID     int    `json:"id"`
+	Animal Animal `json:"data"`
+}
