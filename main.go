@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -30,11 +32,22 @@ type JSONMap struct {
 var (
 	animals = make(map[int]Animal) // mapping from ID to Animal
 	mu      sync.Mutex             // DB mutex
-	connStr = "user=nur password= host=localhost port=5432 dbname=nur sslmode=disable"
 	db      *sql.DB
 )
 
 func init() {
+	// load the .env file
+	if err := godotenv.Load(); err != nil {
+		log.Print("No .env file found")
+	}
+	// construct a connection string
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	dbname := os.Getenv("DB_NAME")
+	sslmode := os.Getenv("DB_SSLMODE")
+	connStr := fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s sslmode=%s", user, password, host, port, dbname, sslmode)
 	// connect to database
 	var err error
 	db, err = sql.Open("postgres", connStr)
@@ -87,7 +100,11 @@ func main() {
 	r.PATCH("/animals/:id/description", patchHandler) // change only description field
 
 	// run the server
-	r.Run(":3000")
+	err := r.Run(":3000")
+	if err != nil {
+		log.Fatal(err)
+	}
+	db.Close()
 }
 
 func getHandler(c *gin.Context) {
