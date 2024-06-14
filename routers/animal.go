@@ -6,10 +6,11 @@ import (
 	"go-test/models"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
-func GetAnimals(c *gin.Context) {
+func retrieveObjects(c *gin.Context) (*sql.DB, sync.Mutex) {
 	// retrieve middleware db and mutex objects
 	var db *sql.DB
 	var mu sync.Mutex
@@ -22,6 +23,11 @@ func GetAnimals(c *gin.Context) {
 	if !ok {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve mutex object"})
 	}
+	return db, mu
+}
+
+func GetAnimals(c *gin.Context) {
+	db, mu := retrieveObjects(c)
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -52,4 +58,20 @@ func GetAnimals(c *gin.Context) {
 	}
 	// return all animals
 	c.JSON(http.StatusOK, resAnimalList)
+}
+
+func GetAnimalCount(c *gin.Context) {
+	db, mu := retrieveObjects(c)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// get count from the animals table
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM animals").Scan(&count)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// set the custom item length header to number of records in DB
+	c.Header("X-Item-Length", strconv.Itoa(count))
+	c.Status(http.StatusOK)
 }

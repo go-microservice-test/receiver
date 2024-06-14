@@ -50,7 +50,7 @@ func main() {
 		}
 	})
 	r.GET("/animals", routers.GetAnimals)
-	r.HEAD("/animals", headHandler)
+	r.HEAD("/animals", routers.GetAnimalCount)
 	r.GET("/animals/:id", getByIdHandler)
 	r.POST("/animals", postHandler)
 	r.PUT("/animals/:id", putHandler)
@@ -63,21 +63,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func headHandler(c *gin.Context) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// get count from the animals table
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM animals").Scan(&count)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// set the custom item length header to number of records in DB
-	c.Header("X-Item-Length", strconv.Itoa(count))
-	c.Status(http.StatusOK)
 }
 
 func getByIdHandler(c *gin.Context) {
