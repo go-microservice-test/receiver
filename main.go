@@ -2,16 +2,14 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	db_utils "go-test/db-utils"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"sync"
 )
@@ -20,7 +18,7 @@ type Animal struct {
 	Name        string `json:"name"`
 	Type        int    `json:"type"`
 	Description string `json:"description"`
-	IsActive    bool   `json:"is_active"`
+	IsActive    bool   `json:"isActive"`
 }
 
 // JSONMap - record processed into json parseable object.
@@ -34,46 +32,17 @@ var (
 	db *sql.DB
 )
 
-func init() {
-	// load the .env file
-	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
-	}
-	// construct a connection string
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	dbname := os.Getenv("DB_NAME")
-	sslmode := os.Getenv("DB_SSLMODE")
-	connStr := fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s sslmode=%s", user, password, host, port, dbname, sslmode)
-	// connect to database
-	var err error
-	db, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Verify the connection
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Connected to the database")
-	// creating table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS animals (
-    	id SERIAL PRIMARY KEY,
-    	name VARCHAR(100),
-    	type INT,
-    	description VARCHAR(500),
-    	is_active BOOLEAN
-    )`)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 func main() {
+	// load configuration
+	_cfg := LoadConfiguration("config.json")
+	// setup connection
+	db = db_utils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(db)
 	// get an engine instance
 	r := gin.Default()
 
@@ -100,10 +69,6 @@ func main() {
 
 	// run the server
 	err := r.Run(":3000")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = db.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
