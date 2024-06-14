@@ -3,7 +3,7 @@ package routers
 import (
 	"errors"
 	"github.com/gin-gonic/gin"
-	models2 "go-test/db-utils/models"
+	dbmodels "go-test/db-utils/models"
 	"go-test/models"
 	"gorm.io/gorm"
 	"log"
@@ -34,7 +34,7 @@ func GetAnimals(c *gin.Context) {
 	defer mu.Unlock()
 
 	// select all records from the animals table
-	var animals []models2.Animal
+	var animals []dbmodels.Animal
 	result := db.Find(&animals)
 	if result.Error != nil {
 		log.Fatal(result.Error)
@@ -64,7 +64,7 @@ func GetAnimalCount(c *gin.Context) {
 
 	// get count from the animals table
 	var count int64
-	result := db.Model(&models2.Animal{}).Count(&count)
+	result := db.Model(&dbmodels.Animal{}).Count(&count)
 	if result.Error != nil {
 		log.Fatal(result.Error)
 	}
@@ -86,7 +86,7 @@ func GetAnimalByID(c *gin.Context) {
 	defer mu.Unlock()
 
 	// find first record with id
-	var animal models2.Animal
+	var animal dbmodels.Animal
 	result := db.First(&animal, id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -122,7 +122,7 @@ func CreateAnimal(c *gin.Context) {
 	}
 
 	// copy fields from input
-	var animal models2.Animal
+	var animal dbmodels.Animal
 	animal.Name = animalInput.Name
 	animal.Description = animalInput.Description
 	animal.Type = animalInput.Type
@@ -163,7 +163,7 @@ func ReplaceAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var animal models2.Animal
+	var animal dbmodels.Animal
 	result := db.First(&animal, id)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
@@ -208,7 +208,7 @@ func DeleteAnimal(c *gin.Context) {
 	defer mu.Unlock()
 
 	// delete in the database
-	result := db.Delete(&models2.Animal{}, id)
+	result := db.Delete(&dbmodels.Animal{}, id)
 	if result.Error != nil {
 		log.Fatal(result.Error)
 	}
@@ -243,7 +243,7 @@ func UpdateAnimalDescription(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var animal models2.Animal
+	var animal dbmodels.Animal
 	result := db.First(&animal, id)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
