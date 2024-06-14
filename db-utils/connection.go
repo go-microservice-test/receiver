@@ -1,22 +1,19 @@
 package dbutils
 
 import (
-	"database/sql"
 	"fmt"
+	"go-test/db-utils/models"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"log"
 )
 
-func Connect(DBUser, DBPassword, DBHost, DBName, DBSSLMode, DBPort string) *sql.DB {
+func Connect(DBUser, DBPassword, DBHost, DBName, DBSSLMode, DBPort string) *gorm.DB {
 	// construct a connection string
 	connStr := fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s sslmode=%s", DBUser, DBPassword, DBHost, DBPort, DBName, DBSSLMode)
 	// connect to database
 	var err error
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Verify the connection
-	err = db.Ping()
+	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,13 +21,7 @@ func Connect(DBUser, DBPassword, DBHost, DBName, DBSSLMode, DBPort string) *sql.
 	fmt.Println("Connected to the database")
 
 	// creating table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS animals (
-    	id SERIAL PRIMARY KEY,
-    	name VARCHAR(100),
-    	type INT,
-    	description VARCHAR(500),
-    	is_active BOOLEAN
-    )`)
+	err = db.AutoMigrate(&models.Animal{})
 	if err != nil {
 		log.Fatal(err)
 	}

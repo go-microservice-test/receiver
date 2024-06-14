@@ -1,21 +1,23 @@
 package routers
 
 import (
-	"database/sql"
+	"errors"
 	"github.com/gin-gonic/gin"
+	models2 "go-test/db-utils/models"
 	"go-test/models"
+	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"strconv"
 	"sync"
 )
 
-func retrieveObjects(c *gin.Context) (*sql.DB, sync.Mutex) {
+func retrieveObjects(c *gin.Context) (*gorm.DB, sync.Mutex) {
 	// retrieve middleware db and mutex objects
-	var db *sql.DB
+	var db *gorm.DB
 	var mu sync.Mutex
 	var ok bool
-	db, ok = c.MustGet("databaseObject").(*sql.DB)
+	db, ok = c.MustGet("databaseObject").(*gorm.DB)
 	if !ok {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve database object"})
 	}
@@ -32,29 +34,24 @@ func GetAnimals(c *gin.Context) {
 	defer mu.Unlock()
 
 	// select all records from the animals table
-	rows, err := db.Query("SELECT * FROM animals")
-	if err != nil {
-		log.Fatal(err)
+	var animals []models2.Animal
+	result := db.Find(&animals)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(rows)
 	// convert results into JSON parseable format
 	var resAnimalList []models.AnimalWithID
-	for rows.Next() {
-		var id int
-		var animal models.Animal
-		// parse it into id and animal
-		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
-		if err != nil {
-			log.Fatal(err)
-		}
-
+	for _, animal := range animals {
 		// append to the list
-		resAnimalList = append(resAnimalList, models.AnimalWithID{ID: id, Animal: animal})
+		resAnimalList = append(resAnimalList, models.AnimalWithID{
+			ID: int(animal.ID),
+			Animal: models.Animal{
+				Name:        animal.Name,
+				Type:        animal.Type,
+				Description: animal.Description,
+				IsActive:    animal.IsActive,
+			},
+		})
 	}
 	// return all animals
 	c.JSON(http.StatusOK, resAnimalList)
@@ -66,13 +63,13 @@ func GetAnimalCount(c *gin.Context) {
 	defer mu.Unlock()
 
 	// get count from the animals table
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM animals").Scan(&count)
-	if err != nil {
-		log.Fatal(err)
+	var count int64
+	result := db.Model(&models2.Animal{}).Count(&count)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
 	// set the custom item length header to number of records in DB
-	c.Header("X-Item-Length", strconv.Itoa(count))
+	c.Header("X-Item-Length", strconv.Itoa(int(count)))
 	c.Status(http.StatusOK)
 }
 
@@ -88,35 +85,28 @@ func GetAnimalByID(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// select records with specific id
-	query := `SELECT * FROM animals WHERE id = $1`
-	rows, err := db.Query(query, id)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			log.Fatal(err)
+	// find first record with id
+	var animal models2.Animal
+	result := db.First(&animal, id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+			return
+		} else {
+			log.Fatal(result.Error)
 		}
-	}(rows)
-
-	// check if there are any rows returned
-	if !rows.Next() {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	} else {
-		// return specific animal
-		var animal models.Animal
-		// parse animal
-		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
-		if err != nil {
-			log.Fatal(err)
-		}
-		// send the requested animal
-		c.JSON(http.StatusOK, models.AnimalWithID{ID: id, Animal: animal})
-		return
 	}
+	// send the requested animal
+	c.JSON(http.StatusOK, models.AnimalWithID{
+		ID: id,
+		Animal: models.Animal{
+			Name:        animal.Name,
+			Type:        animal.Type,
+			Description: animal.Description,
+			IsActive:    animal.IsActive,
+		},
+	})
+	return
 }
 
 func CreateAnimal(c *gin.Context) {
@@ -125,26 +115,34 @@ func CreateAnimal(c *gin.Context) {
 	defer mu.Unlock()
 
 	// incorrect input format handling
-	var animal models.Animal
-	if err := c.ShouldBindJSON(&animal); err != nil {
+	var animalInput models.Animal
+	if err := c.ShouldBindJSON(&animalInput); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// prepare sql statement
-	query := `
-        INSERT INTO animals (name, type, description, is_active)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-    `
-	var insertedID int
-	err := db.QueryRow(query, animal.Name, animal.Type, animal.Description, animal.IsActive).Scan(&insertedID)
-	if err != nil {
-		log.Fatal(err)
+	// copy fields from input
+	var animal models2.Animal
+	animal.Name = animalInput.Name
+	animal.Description = animalInput.Description
+	animal.Type = animalInput.Type
+	animal.IsActive = animalInput.IsActive
+	// create a new record
+	result := db.Create(&animal)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
 
 	// return created animal
-	c.JSON(http.StatusOK, models.AnimalWithID{ID: insertedID, Animal: animal})
+	c.JSON(http.StatusOK, models.AnimalWithID{
+		ID: int(animal.ID),
+		Animal: models.Animal{
+			Name:        animal.Name,
+			Type:        animal.Type,
+			Description: animal.Description,
+			IsActive:    animal.IsActive,
+		},
+	})
 }
 
 func ReplaceAnimal(c *gin.Context) {
@@ -157,37 +155,44 @@ func ReplaceAnimal(c *gin.Context) {
 		return
 	}
 	// incorrect input format handling
-	var animal models.Animal
-	if err := c.ShouldBindJSON(&animal); err != nil {
+	var animalInput models.Animal
+	if err := c.ShouldBindJSON(&animalInput); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	mu.Lock()
 	defer mu.Unlock()
 
-	query := `
-		UPDATE animals
-		SET name = $2, type = $3, description = $4, is_active = $5
-		WHERE id = $1
-	`
-
-	// execute with parameters
-	result, err := db.Exec(query, id, animal.Name, animal.Type, animal.Description, animal.IsActive)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// check rowsAffected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
+	var animal models2.Animal
+	result := db.First(&animal, id)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+			return
+		} else {
+			log.Fatal(result.Error)
+		}
 	}
 
-	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	} else {
-		c.JSON(http.StatusOK, models.AnimalWithID{ID: id, Animal: animal})
+	// replace all field values
+	animal.Name = animalInput.Name
+	animal.Description = animalInput.Description
+	animal.Type = animalInput.Type
+	animal.IsActive = animalInput.IsActive
+
+	result = db.Save(&animal)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
+	c.JSON(http.StatusOK, models.AnimalWithID{
+		ID: int(animal.ID),
+		Animal: models.Animal{
+			Name:        animal.Name,
+			Type:        animal.Type,
+			Description: animal.Description,
+			IsActive:    animal.IsActive,
+		},
+	})
 }
 
 func DeleteAnimal(c *gin.Context) {
@@ -202,21 +207,13 @@ func DeleteAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	query := `DELETE FROM animals WHERE id = $1`
-
-	// execute with parameters
-	result, err := db.Exec(query, id)
-	if err != nil {
-		log.Fatal(err)
+	// delete in the database
+	result := db.Delete(&models2.Animal{}, id)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
 
-	// check rowsAffected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if rowsAffected == 0 {
+	if result.RowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 		return
 	} else {
@@ -246,29 +243,33 @@ func UpdateAnimalDescription(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	query := `
-			UPDATE animals
-			SET description = $2
-			WHERE id = $1
-		`
-
-	// execute with parameters
-	result, err := db.Exec(query, id, input.Description)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// check rowsAffected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
+	var animal models2.Animal
+	result := db.First(&animal, id)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+			return
+		} else {
+			log.Fatal(result.Error)
+		}
 	}
 
-	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	} else {
-		c.Status(http.StatusOK)
+	// replace description
+	animal.Description = input.Description
+
+	result = db.Save(&animal)
+	if result.Error != nil {
+		log.Fatal(result.Error)
 	}
+	c.JSON(http.StatusOK, models.AnimalWithID{
+		ID: int(animal.ID),
+		Animal: models.Animal{
+			Name:        animal.Name,
+			Type:        animal.Type,
+			Description: animal.Description,
+			IsActive:    animal.IsActive,
+		},
+	})
 }
 
 func TraceAnimalRoute(c *gin.Context) {

@@ -1,19 +1,19 @@
 package main
 
 import (
-	"database/sql"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	dbutils "go-test/db-utils"
 	"go-test/middleware"
 	"go-test/routers"
+	"gorm.io/gorm"
 	"log"
 	"sync"
 )
 
 var (
 	mu sync.Mutex // DB mutex
-	db *sql.DB
+	db *gorm.DB
 )
 
 func main() {
@@ -21,12 +21,6 @@ func main() {
 	_cfg := LoadConfiguration("config.json")
 	// setup connection
 	db = dbutils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
-	defer func(db *sql.DB) {
-		err := db.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(db)
 	// get an engine instance
 	r := gin.Default()
 
