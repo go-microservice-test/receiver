@@ -20,7 +20,7 @@ type Animal struct {
 	Name        string `json:"name"`
 	Type        int    `json:"type"`
 	Description string `json:"description"`
-	isActive    bool   `json:"isactive"`
+	IsActive    bool   `json:"is_active"`
 }
 
 // JSONMap - record processed into json parseable object.
@@ -30,9 +30,8 @@ type JSONMap struct {
 }
 
 var (
-	animals = make(map[int]Animal) // mapping from ID to Animal
-	mu      sync.Mutex             // DB mutex
-	db      *sql.DB
+	mu sync.Mutex // DB mutex
+	db *sql.DB
 )
 
 func init() {
@@ -67,7 +66,7 @@ func init() {
     	name VARCHAR(100),
     	type INT,
     	description VARCHAR(500),
-    	isactive BOOLEAN
+    	is_active BOOLEAN
     )`)
 	if err != nil {
 		log.Fatal(err)
@@ -104,7 +103,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.Close()
+	err = db.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func getHandler(c *gin.Context) {
@@ -116,14 +118,19 @@ func getHandler(c *gin.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(rows)
 	// convert results into JSON parseable format
 	var resAnimalList []JSONMap
 	for rows.Next() {
 		var id int
 		var animal Animal
 		// parse it into id and animal
-		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.isActive)
+		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -167,7 +174,12 @@ func getByIdHandler(c *gin.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(rows)
 
 	// check if there are any rows returned
 	if !rows.Next() {
@@ -177,7 +189,7 @@ func getByIdHandler(c *gin.Context) {
 		// return specific animal
 		var animal Animal
 		// parse animal
-		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.isActive)
+		err := rows.Scan(&id, &animal.Name, &animal.Type, &animal.Description, &animal.IsActive)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -200,12 +212,12 @@ func postHandler(c *gin.Context) {
 
 	// prepare sql statement
 	query := `
-        INSERT INTO animals (name, type, description, isactive)
+        INSERT INTO animals (name, type, description, is_active)
         VALUES ($1, $2, $3, $4)
         RETURNING id
     `
 	var insertedID int
-	err := db.QueryRow(query, animal.Name, animal.Type, animal.Description, animal.isActive).Scan(&insertedID)
+	err := db.QueryRow(query, animal.Name, animal.Type, animal.Description, animal.IsActive).Scan(&insertedID)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -233,12 +245,12 @@ func putHandler(c *gin.Context) {
 
 	query := `
 		UPDATE animals
-		SET name = $2, type = $3, description = $4, isactive = $5
+		SET name = $2, type = $3, description = $4, is_active = $5
 		WHERE id = $1
 	`
 
 	// execute with parameters
-	result, err := db.Exec(query, id, animal.Name, animal.Type, animal.Description, animal.isActive)
+	result, err := db.Exec(query, id, animal.Name, animal.Type, animal.Description, animal.IsActive)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -360,7 +372,12 @@ func connectHandler(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to connect to destination"})
 		return
 	}
-	defer destConn.Close()
+	defer func(destConn net.Conn) {
+		err := destConn.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(destConn)
 
 	// make it callers responsibility to close the connection
 	clientConn, _, err := c.Writer.Hijack()
@@ -368,18 +385,39 @@ func connectHandler(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to hijack the connection"})
 		return
 	}
-	defer clientConn.Close()
+	defer func(clientConn net.Conn) {
+		err := clientConn.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(clientConn)
 
 	log.Println("TCP connection established. Starting to forward traffic")
 
 	// launch a go-routine to forward traffic
 	go func() {
-		defer clientConn.Close()
-		defer destConn.Close()
-		io.Copy(destConn, clientConn)
+		defer func(clientConn net.Conn) {
+			err := clientConn.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}(clientConn)
+		defer func(destConn net.Conn) {
+			err := destConn.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}(destConn)
+		_, err := io.Copy(destConn, clientConn)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}()
 
-	io.Copy(clientConn, destConn)
+	_, err = io.Copy(clientConn, destConn)
+	if err != nil {
+		log.Fatal(err)
+	}
 	log.Println("Connection closed")
 }
 
