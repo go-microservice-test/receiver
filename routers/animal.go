@@ -42,16 +42,17 @@ func GetAnimals(c *gin.Context) {
 	// convert results into JSON parseable format
 	var resAnimalList []models.AnimalWithID
 	for _, animal := range animals {
-		// append to the list
-		resAnimalList = append(resAnimalList, models.AnimalWithID{
-			ID: int(animal.ID),
-			Animal: models.Animal{
-				Name:        animal.Name,
-				Type:        animal.Type,
-				Description: animal.Description,
-				IsActive:    animal.IsActive,
-			},
-		})
+		// append to the list if not deleted
+		if animal.IsActive {
+			resAnimalList = append(resAnimalList, models.AnimalWithID{
+				ID: int(animal.ID),
+				Animal: models.Animal{
+					Name:        animal.Name,
+					Type:        animal.Type,
+					Description: animal.Description,
+				},
+			})
+		}
 	}
 	// return all animals
 	c.JSON(http.StatusOK, resAnimalList)
@@ -64,7 +65,7 @@ func GetAnimalCount(c *gin.Context) {
 
 	// get count from the animals table
 	var count int64
-	result := db.Model(&dbmodels.Animal{}).Count(&count)
+	result := db.Model(&dbmodels.Animal{}).Where("is_active = ?", true).Count(&count)
 	if result.Error != nil {
 		log.Fatal(result.Error)
 	}
@@ -96,6 +97,11 @@ func GetAnimalByID(c *gin.Context) {
 			log.Fatal(result.Error)
 		}
 	}
+	// check if deleted
+	if !animal.IsActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	}
 	// send the requested animal
 	c.JSON(http.StatusOK, models.AnimalWithID{
 		ID: id,
@@ -103,7 +109,6 @@ func GetAnimalByID(c *gin.Context) {
 			Name:        animal.Name,
 			Type:        animal.Type,
 			Description: animal.Description,
-			IsActive:    animal.IsActive,
 		},
 	})
 	return
@@ -126,7 +131,7 @@ func CreateAnimal(c *gin.Context) {
 	animal.Name = animalInput.Name
 	animal.Description = animalInput.Description
 	animal.Type = animalInput.Type
-	animal.IsActive = animalInput.IsActive
+
 	// create a new record
 	result := db.Create(&animal)
 	if result.Error != nil {
@@ -140,7 +145,6 @@ func CreateAnimal(c *gin.Context) {
 			Name:        animal.Name,
 			Type:        animal.Type,
 			Description: animal.Description,
-			IsActive:    animal.IsActive,
 		},
 	})
 }
@@ -173,12 +177,16 @@ func ReplaceAnimal(c *gin.Context) {
 			log.Fatal(result.Error)
 		}
 	}
+	// check if deleted
+	if !animal.IsActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	}
 
 	// replace all field values
 	animal.Name = animalInput.Name
 	animal.Description = animalInput.Description
 	animal.Type = animalInput.Type
-	animal.IsActive = animalInput.IsActive
 
 	result = db.Save(&animal)
 	if result.Error != nil {
@@ -190,7 +198,6 @@ func ReplaceAnimal(c *gin.Context) {
 			Name:        animal.Name,
 			Type:        animal.Type,
 			Description: animal.Description,
-			IsActive:    animal.IsActive,
 		},
 	})
 }
@@ -207,18 +214,38 @@ func DeleteAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// delete in the database
-	result := db.Delete(&dbmodels.Animal{}, id)
+	// check if exists
+	var animal dbmodels.Animal
+	result := db.First(&animal, id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+			return
+		} else {
+			log.Fatal(result.Error)
+		}
+	}
+	// check if deleted
+	if !animal.IsActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	}
+	// set deleted flag
+	animal.IsActive = false
+	// update in the database
+	result = db.Save(&animal)
 	if result.Error != nil {
 		log.Fatal(result.Error)
 	}
-
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	} else {
-		c.Status(http.StatusNoContent)
-	}
+	// send deleted animal
+	c.JSON(http.StatusOK, models.AnimalWithID{
+		ID: int(animal.ID),
+		Animal: models.Animal{
+			Name:        animal.Name,
+			Type:        animal.Type,
+			Description: animal.Description,
+		},
+	})
 }
 
 func UpdateAnimalDescription(c *gin.Context) {
@@ -253,6 +280,11 @@ func UpdateAnimalDescription(c *gin.Context) {
 			log.Fatal(result.Error)
 		}
 	}
+	// check if deleted
+	if !animal.IsActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
+		return
+	}
 
 	// replace description
 	animal.Description = input.Description
@@ -267,7 +299,6 @@ func UpdateAnimalDescription(c *gin.Context) {
 			Name:        animal.Name,
 			Type:        animal.Type,
 			Description: animal.Description,
-			IsActive:    animal.IsActive,
 		},
 	})
 }
