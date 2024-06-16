@@ -6,9 +6,11 @@ import (
 	dbutils "go-test/db-utils"
 	"go-test/middleware"
 	"go-test/routers"
+	"go-test/utils"
 	"gorm.io/gorm"
 	"log"
 	"sync"
+	"time"
 )
 
 var (
@@ -50,6 +52,8 @@ func main() {
 	r.OPTIONS("/*path", routers.OptionsHandler)                          // all URLs
 	r.PATCH("/animals/:id/description", routers.UpdateAnimalDescription) // change only description field
 
+	// setup database health checking loop every 10 seconds
+	go utils.DataBaseHealthPollingLoop(db, time.Duration(_cfg.DBHeathInterval)*time.Second)
 	// run the server
 	err := r.Run(":3000")
 	if err != nil {

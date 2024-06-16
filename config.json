@@ -1,4 +1,5 @@
 {
+  "DATABASE_HEALTH_LOOP_INTERVAL": 10,
   "DB_USER": "nur",
   "DB_PASSWORD": "",
   "DB_HOST": "localhost",
