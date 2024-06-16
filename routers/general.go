@@ -10,12 +10,6 @@ import (
 )
 
 func OptionsHandler(c *gin.Context) {
-	// setting cors headers
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH, CONNECT, TRACE")
-	c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	c.Header("Access-Control-Max-Age", "86400")
-
 	// success
 	c.Status(http.StatusNoContent)
 }

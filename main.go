@@ -24,6 +24,8 @@ func main() {
 	// get an engine instance
 	r := gin.Default()
 
+	// middleware
+	r.Use(middleware.CORSMiddleware())
 	r.Use(middleware.ApiMiddleware(db, mu))
 
 	// connect routers
