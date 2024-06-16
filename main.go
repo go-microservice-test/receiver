@@ -23,6 +23,8 @@ func main() {
 	db = dbutils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
 	// get an engine instance
 	r := gin.Default()
+	r.ForwardedByClientIP = true
+	r.SetTrustedProxies([]string{"127.0.0.1"})
 
 	// middleware
 	r.Use(middleware.CORSMiddleware())
