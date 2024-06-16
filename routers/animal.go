@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
 	dbmodels "go-test/db-utils/models"
@@ -10,10 +11,14 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 func retrieveObjects(c *gin.Context) (*gorm.DB, sync.Mutex) {
 	// retrieve middleware db and mutex objects
+
+	// ideally this should communicate with result channels in handlers
+	// so that for example response is not sent twice
 	var db *gorm.DB
 	var mu sync.Mutex
 	var ok bool
@@ -29,33 +34,52 @@ func retrieveObjects(c *gin.Context) (*gorm.DB, sync.Mutex) {
 }
 
 func GetAnimals(c *gin.Context) {
-	db, mu := retrieveObjects(c)
-	mu.Lock()
-	defer mu.Unlock()
+	// setting various timeouts for different handlers
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
 
-	// select all records from the animals table
-	var animals []dbmodels.Animal
-	result := db.Find(&animals)
-	if result.Error != nil {
-		log.Fatal(result.Error)
-	}
-	// convert results into JSON parseable format
-	var resAnimalList []models.AnimalWithID
-	for _, animal := range animals {
-		// append to the list if not deleted
-		if animal.IsActive {
-			resAnimalList = append(resAnimalList, models.AnimalWithID{
-				ID: int(animal.ID),
-				Animal: models.Animal{
-					Name:        animal.Name,
-					Type:        animal.Type,
-					Description: animal.Description,
-				},
-			})
+	// channels to receive the result
+	resultChan := make(chan []models.AnimalWithID, 1)
+
+	// launch fetching in go-routine
+	go func() {
+		db, mu := retrieveObjects(c)
+		mu.Lock()
+		defer mu.Unlock()
+
+		// select all records from the animals table
+		var animals []dbmodels.Animal
+		result := db.Find(&animals)
+		if result.Error != nil {
+			log.Fatal(result.Error)
 		}
+		// convert results into JSON parseable format
+		var resAnimalList []models.AnimalWithID
+		for _, animal := range animals {
+			// append to the list if not deleted
+			if animal.IsActive {
+				resAnimalList = append(resAnimalList, models.AnimalWithID{
+					ID: int(animal.ID),
+					Animal: models.Animal{
+						Name:        animal.Name,
+						Type:        animal.Type,
+						Description: animal.Description,
+					},
+				})
+			}
+		}
+		// exit on normal execution or on timeout
+		select {
+		case resultChan <- resAnimalList:
+		case <-ctx.Done():
+		}
+	}()
+	select {
+	case res := <-resultChan:
+		c.JSON(http.StatusOK, res)
+	case <-ctx.Done():
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "request timeout"})
 	}
-	// return all animals
-	c.JSON(http.StatusOK, resAnimalList)
 }
 
 func GetAnimalCount(c *gin.Context) {
