@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	ginratelimit "github.com/ljahier/gin-ratelimit"
 	dbutils "go-test/db-utils"
 	"go-test/middleware"
 	"go-test/routers"
@@ -29,8 +30,10 @@ func main() {
 	r.SetTrustedProxies([]string{"127.0.0.1"})
 
 	// middleware
-	r.Use(middleware.CORSMiddleware())
-	r.Use(middleware.ApiMiddleware(db, mu))
+	r.Use(middleware.CORSMiddleware())                                       // preflight requests
+	tb := ginratelimit.NewTokenBucket(_cfg.RequestsPerMinute, 1*time.Minute) // rate limiting
+	r.Use(ginratelimit.RateLimitByIP(tb))
+	r.Use(middleware.ApiMiddleware(db, mu)) // sharing variables with routers
 
 	// connect routers
 	// middleware for connect and trace handlers
