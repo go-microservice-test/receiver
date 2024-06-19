@@ -21,6 +21,8 @@ func MigrateAnimals(db *gorm.DB) error {
 			if err := tx.Migrator().CreateTable(&models.Animal{}); err != nil {
 				return err
 			}
+			// no additional checks required
+			return nil
 		}
 		// get column names in existing table
 		columns, err := db.Migrator().ColumnTypes(&models.Animal{})
