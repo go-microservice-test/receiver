@@ -1,9 +1,13 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+)
 
 type Animal struct {
-	gorm.Model
+	ID          uint `gorm:"primaryKey"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 	Name        string `json:"name"`
 	Type        int    `json:"type"`
 	Description string `json:"description"`

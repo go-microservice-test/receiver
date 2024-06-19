@@ -2,7 +2,7 @@ package dbutils
 
 import (
 	"fmt"
-	"go-test/db-utils/models"
+	"go-test/db-utils/migrations"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"log"
@@ -21,7 +21,7 @@ func Connect(DBUser, DBPassword, DBHost, DBName, DBSSLMode, DBPort string) *gorm
 	fmt.Println("Connected to the database")
 
 	// creating table if not exists
-	err = db.AutoMigrate(&models.Animal{})
+	err = migrations.MigrateAllTables(db)
 	if err != nil {
 		log.Fatal(err)
 	}
