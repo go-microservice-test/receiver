@@ -2,15 +2,15 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"go-test/db-utils/repository"
 	"sync"
 )
 
 // ApiMiddleware - adds db and mutex objects for routers to use
-func ApiMiddleware(db *gorm.DB, mu sync.Mutex) gin.HandlerFunc {
+func ApiMiddleware(mu sync.Mutex, rp repository.AnimalRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set("databaseObject", db)
 		c.Set("mutexObject", mu)
+		c.Set("animalRepository", rp)
 		c.Next()
 	}
 }

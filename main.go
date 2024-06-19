@@ -5,6 +5,7 @@ import (
 	_ "github.com/lib/pq"
 	ginratelimit "github.com/ljahier/gin-ratelimit"
 	dbutils "go-test/db-utils"
+	"go-test/db-utils/repository"
 	"go-test/middleware"
 	"go-test/routers"
 	"go-test/utils"
@@ -24,6 +25,8 @@ func main() {
 	_cfg := LoadConfiguration("config.json")
 	// setup connection
 	db = dbutils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
+	// setup repositories
+	animalRepository := repository.NewAnimalsRepositoryImpl(db)
 	// get an engine instance
 	r := gin.Default()
 	r.ForwardedByClientIP = true
@@ -33,7 +36,7 @@ func main() {
 	r.Use(middleware.CORSMiddleware())                                       // preflight requests
 	tb := ginratelimit.NewTokenBucket(_cfg.RequestsPerMinute, 1*time.Minute) // rate limiting
 	r.Use(ginratelimit.RateLimitByIP(tb))
-	r.Use(middleware.ApiMiddleware(db, mu)) // sharing variables with routers
+	r.Use(middleware.ApiMiddleware(mu, animalRepository)) // sharing variables with routers
 
 	// connect routers
 	// middleware for connect and trace handlers

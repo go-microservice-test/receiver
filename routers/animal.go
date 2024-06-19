@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
-	dbmodels "go-test/db-utils/models"
+	"go-test/db-utils/repository"
 	"go-test/models"
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"strconv"
@@ -14,23 +13,23 @@ import (
 	"time"
 )
 
-func retrieveObjects(c *gin.Context) (*gorm.DB, sync.Mutex) {
-	// retrieve middleware db and mutex objects
+func retrieveObjects(c *gin.Context) (sync.Mutex, repository.AnimalRepository) {
+	// retrieve middleware mutex object and repository implementation
 
 	// ideally this should communicate with result channels in handlers
 	// so that for example response is not sent twice
-	var db *gorm.DB
 	var mu sync.Mutex
+	var rp repository.AnimalRepository
 	var ok bool
-	db, ok = c.MustGet("databaseObject").(*gorm.DB)
-	if !ok {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve database object"})
-	}
 	mu, ok = c.MustGet("mutexObject").(sync.Mutex)
 	if !ok {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve mutex object"})
 	}
-	return db, mu
+	rp, ok = c.MustGet("animalRepository").(repository.AnimalRepository)
+	if !ok {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve repository implementation"})
+	}
+	return mu, rp
 }
 
 func GetAnimals(c *gin.Context) {
@@ -43,30 +42,26 @@ func GetAnimals(c *gin.Context) {
 
 	// launch fetching in go-routine
 	go func() {
-		db, mu := retrieveObjects(c)
+		mu, rp := retrieveObjects(c)
 		mu.Lock()
 		defer mu.Unlock()
 
 		// select all records from the animals table
-		var animals []dbmodels.Animal
-		result := db.Find(&animals)
-		if result.Error != nil {
-			log.Fatal(result.Error)
+		var animals, err = rp.FindAll()
+		if err != nil {
+			log.Fatal(err)
 		}
 		// convert results into JSON parseable format
 		var resAnimalList []models.AnimalWithID
 		for _, animal := range animals {
-			// append to the list if not deleted
-			if animal.IsActive {
-				resAnimalList = append(resAnimalList, models.AnimalWithID{
-					ID: int(animal.ID),
-					Animal: models.Animal{
-						Name:        animal.Name,
-						Type:        animal.Type,
-						Description: animal.Description,
-					},
-				})
-			}
+			resAnimalList = append(resAnimalList, models.AnimalWithID{
+				ID: int(animal.ID),
+				Animal: models.Animal{
+					Name:        animal.Name,
+					Type:        animal.Type,
+					Description: animal.Description,
+				},
+			})
 		}
 		// exit on normal execution or on timeout
 		select {
@@ -83,15 +78,14 @@ func GetAnimals(c *gin.Context) {
 }
 
 func GetAnimalCount(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	mu.Lock()
 	defer mu.Unlock()
 
 	// get count from the animals table
-	var count int64
-	result := db.Model(&dbmodels.Animal{}).Where("is_active = ?", true).Count(&count)
-	if result.Error != nil {
-		log.Fatal(result.Error)
+	count, err := rp.GetCount()
+	if err != nil {
+		log.Fatal(err)
 	}
 	// set the custom item length header to number of records in DB
 	c.Header("X-Item-Length", strconv.Itoa(int(count)))
@@ -99,7 +93,7 @@ func GetAnimalCount(c *gin.Context) {
 }
 
 func GetAnimalByID(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -110,22 +104,16 @@ func GetAnimalByID(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// find first record with id
-	var animal dbmodels.Animal
-	result := db.First(&animal, id)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	animal, err := rp.FindByID(uint(id))
+	if err != nil {
+		var notFound *repository.NotFoundError
+		if errors.As(err, &notFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
-		} else {
-			log.Fatal(result.Error)
 		}
+		log.Fatal(err)
 	}
-	// check if deleted
-	if !animal.IsActive {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	}
+
 	// send the requested animal
 	c.JSON(http.StatusOK, models.AnimalWithID{
 		ID: id,
@@ -139,7 +127,7 @@ func GetAnimalByID(c *gin.Context) {
 }
 
 func CreateAnimal(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -150,16 +138,9 @@ func CreateAnimal(c *gin.Context) {
 		return
 	}
 
-	// copy fields from input
-	var animal dbmodels.Animal
-	animal.Name = animalInput.Name
-	animal.Description = animalInput.Description
-	animal.Type = animalInput.Type
-
-	// create a new record
-	result := db.Create(&animal)
-	if result.Error != nil {
-		log.Fatal(result.Error)
+	animal, err := rp.Create(animalInput)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// return created animal
@@ -174,7 +155,7 @@ func CreateAnimal(c *gin.Context) {
 }
 
 func ReplaceAnimal(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -191,31 +172,16 @@ func ReplaceAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var animal dbmodels.Animal
-	result := db.First(&animal, id)
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
+	animal, err := rp.Replace(uint(id), animalInput)
+	if err != nil {
+		var notFound *repository.NotFoundError
+		if errors.As(err, &notFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
-		} else {
-			log.Fatal(result.Error)
 		}
-	}
-	// check if deleted
-	if !animal.IsActive {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
+		log.Fatal(err)
 	}
 
-	// replace all field values
-	animal.Name = animalInput.Name
-	animal.Description = animalInput.Description
-	animal.Type = animalInput.Type
-
-	result = db.Save(&animal)
-	if result.Error != nil {
-		log.Fatal(result.Error)
-	}
 	c.JSON(http.StatusOK, models.AnimalWithID{
 		ID: int(animal.ID),
 		Animal: models.Animal{
@@ -227,7 +193,7 @@ func ReplaceAnimal(c *gin.Context) {
 }
 
 func DeleteAnimal(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -238,29 +204,16 @@ func DeleteAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// check if exists
-	var animal dbmodels.Animal
-	result := db.First(&animal, id)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	animal, err := rp.Delete(uint(id))
+	if err != nil {
+		var notFound *repository.NotFoundError
+		if errors.As(err, &notFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
-		} else {
-			log.Fatal(result.Error)
 		}
+		log.Fatal(err)
 	}
-	// check if deleted
-	if !animal.IsActive {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
-	}
-	// set deleted flag
-	animal.IsActive = false
-	// update in the database
-	result = db.Save(&animal)
-	if result.Error != nil {
-		log.Fatal(result.Error)
-	}
+
 	// send deleted animal
 	c.JSON(http.StatusOK, models.AnimalWithID{
 		ID: int(animal.ID),
@@ -273,7 +226,7 @@ func DeleteAnimal(c *gin.Context) {
 }
 
 func UpdateAnimalDescription(c *gin.Context) {
-	db, mu := retrieveObjects(c)
+	mu, rp := retrieveObjects(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -294,29 +247,16 @@ func UpdateAnimalDescription(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var animal dbmodels.Animal
-	result := db.First(&animal, id)
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
+	animal, err := rp.UpdateDescription(uint(id), input.Description)
+	if err != nil {
+		var notFound *repository.NotFoundError
+		if errors.As(err, &notFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
-		} else {
-			log.Fatal(result.Error)
 		}
-	}
-	// check if deleted
-	if !animal.IsActive {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
-		return
+		log.Fatal(err)
 	}
 
-	// replace description
-	animal.Description = input.Description
-
-	result = db.Save(&animal)
-	if result.Error != nil {
-		log.Fatal(result.Error)
-	}
 	c.JSON(http.StatusOK, models.AnimalWithID{
 		ID: int(animal.ID),
 		Animal: models.Animal{
