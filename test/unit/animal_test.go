@@ -3,6 +3,7 @@ package unit
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/assert/v2"
+	"github.com/redis/go-redis/v9"
 	"go-test/db-utils/models"
 	"go-test/middleware"
 	"go-test/routers"
@@ -27,7 +28,7 @@ func TestGetAnimals(t *testing.T) {
 	r := gin.Default()
 	// pass mock repository to routers
 	var mu sync.Mutex
-	r.Use(middleware.ApiMiddleware(mu, mockRepository))
+	r.Use(middleware.ApiMiddleware(mu, mockRepository, &redis.Client{}))
 	r.GET("/", routers.GetAnimals)
 
 	// prepare a testing request
