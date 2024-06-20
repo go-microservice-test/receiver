@@ -1,13 +1,13 @@
 {
   "REQUESTS_PER_MINUTE": 10,
   "DATABASE_HEALTH_LOOP_INTERVAL": 10,
-  "DB_USER": "nur",
-  "DB_PASSWORD": "",
-  "DB_HOST": "localhost",
+  "DB_USER": "john",
+  "DB_PASSWORD": "pass",
+  "DB_HOST": "postgres",
   "DB_PORT": "5432",
-  "DB_NAME": "nur",
+  "DB_NAME": "john_wick",
   "DB_SSLMODE": "disable",
-  "REDIS_ADDRESS": "localhost:6379",
+  "REDIS_ADDRESS": "redis:6379",
   "REDIS_PASSWORD": "",
   "REDIS_DB": 0
 }

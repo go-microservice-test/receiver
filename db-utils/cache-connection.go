@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"log"
+	"time"
 )
 
 func ConnectRedis(DBAddr, DBPassword string, DBName int) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
+		Addr:        DBAddr,
+		Password:    DBPassword,
+		DB:          DBName,
+		DialTimeout: 10 * time.Second, // allow 10 seconds to connect
 	})
 
 	// check connection with empty context
