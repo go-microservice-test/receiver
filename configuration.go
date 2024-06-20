@@ -15,6 +15,9 @@ type Config struct {
 	DBHost            string `json:"DB_HOST"`
 	DBPort            string `json:"DB_PORT"`
 	DBSSLMode         string `json:"DB_SSLMODE"`
+	RedisAddress      string `json:"REDIS_ADDRESS"`
+	RedisPassword     string `json:"REDIS_PASSWORD"`
+	RedisDB           int    `json:"REDIS_DB"`
 }
 
 func LoadConfiguration(file string) Config {

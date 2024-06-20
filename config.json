@@ -6,5 +6,8 @@
   "DB_HOST": "localhost",
   "DB_PORT": "5432",
   "DB_NAME": "nur",
-  "DB_SSLMODE": "disable"
+  "DB_SSLMODE": "disable",
+  "REDIS_ADDRESS": "localhost:6379",
+  "REDIS_PASSWORD": "",
+  "REDIS_DB": 0
 }

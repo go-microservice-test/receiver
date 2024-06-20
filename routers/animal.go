@@ -2,8 +2,10 @@ package routers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"go-test/db-utils/repository"
 	"go-test/models"
 	"log"
@@ -30,6 +32,16 @@ func retrieveObjects(c *gin.Context) (sync.Mutex, repository.AnimalRepository) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve repository implementation"})
 	}
 	return mu, rp
+}
+
+func retrieveRedisObject(c *gin.Context) *redis.Client {
+	var rdb *redis.Client
+	var ok bool
+	rdb, ok = c.MustGet("cacheObject").(*redis.Client)
+	if !ok {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve redis object"})
+	}
+	return rdb
 }
 
 func GetAnimals(c *gin.Context) {
@@ -94,6 +106,7 @@ func GetAnimalCount(c *gin.Context) {
 
 func GetAnimalByID(c *gin.Context) {
 	mu, rp := retrieveObjects(c)
+	rdb := retrieveRedisObject(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -103,6 +116,19 @@ func GetAnimalByID(c *gin.Context) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+
+	// try to find in cache
+	val, err := rdb.Get(context.Background(), strconv.Itoa(id)).Result()
+	if err == nil {
+		// unmarshal
+		var res *models.AnimalWithID
+		err = json.Unmarshal([]byte(val), &res)
+		if err != nil {
+			log.Fatalf("Could not unmarshal JSON: %v", err)
+		}
+		c.JSON(http.StatusOK, res)
+		return
+	}
 
 	animal, err := rp.FindByID(uint(id))
 	if err != nil {
@@ -114,15 +140,26 @@ func GetAnimalByID(c *gin.Context) {
 		log.Fatal(err)
 	}
 
-	// send the requested animal
-	c.JSON(http.StatusOK, models.AnimalWithID{
+	var response = models.AnimalWithID{
 		ID: id,
 		Animal: models.Animal{
 			Name:        animal.Name,
 			Type:        animal.Type,
 			Description: animal.Description,
 		},
-	})
+	}
+	jsonValue, err := json.Marshal(response)
+	if err != nil {
+		log.Fatalf("Could not marshal struct: %v", err)
+	}
+	// cache animal by id
+	err = rdb.Set(context.Background(), strconv.Itoa(id), jsonValue, 1*time.Hour).Err()
+	if err != nil {
+		panic(err)
+	}
+
+	// send the requested animal
+	c.JSON(http.StatusOK, response)
 	return
 }
 
@@ -156,6 +193,7 @@ func CreateAnimal(c *gin.Context) {
 
 func ReplaceAnimal(c *gin.Context) {
 	mu, rp := retrieveObjects(c)
+	rdb := retrieveRedisObject(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -172,6 +210,11 @@ func ReplaceAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// invalidate cache
+	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
+	if err != nil {
+		log.Fatalf("Could not delete key from Redis: %v", err)
+	}
 	animal, err := rp.Replace(uint(id), animalInput)
 	if err != nil {
 		var notFound *repository.NotFoundError
@@ -194,6 +237,7 @@ func ReplaceAnimal(c *gin.Context) {
 
 func DeleteAnimal(c *gin.Context) {
 	mu, rp := retrieveObjects(c)
+	rdb := retrieveRedisObject(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -204,6 +248,11 @@ func DeleteAnimal(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// invalidate cache
+	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
+	if err != nil {
+		log.Fatalf("Could not delete key from Redis: %v", err)
+	}
 	animal, err := rp.Delete(uint(id))
 	if err != nil {
 		var notFound *repository.NotFoundError
@@ -227,6 +276,7 @@ func DeleteAnimal(c *gin.Context) {
 
 func UpdateAnimalDescription(c *gin.Context) {
 	mu, rp := retrieveObjects(c)
+	rdb := retrieveRedisObject(c)
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -235,6 +285,11 @@ func UpdateAnimalDescription(c *gin.Context) {
 		return
 	}
 
+	// invalidate cache
+	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
+	if err != nil {
+		log.Fatalf("Could not delete key from Redis: %v", err)
+	}
 	// incorrect input format handling
 	var input struct {
 		Description string `json:"description"`
