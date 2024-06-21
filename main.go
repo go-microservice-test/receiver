@@ -4,33 +4,20 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	ginratelimit "github.com/ljahier/gin-ratelimit"
-	"github.com/redis/go-redis/v9"
-	dbutils "go-test/db-utils"
-	"go-test/db-utils/repository"
 	"go-test/middleware"
 	"go-test/routers"
+	"go-test/service"
 	"go-test/utils"
-	"gorm.io/gorm"
 	"log"
-	"sync"
 	"time"
-)
-
-var (
-	mu  sync.Mutex // DB mutex
-	db  *gorm.DB
-	rdb *redis.Client
 )
 
 func main() {
 	// load configuration
-	_cfg := LoadConfiguration("config.json")
-	// setup db connection
-	db = dbutils.Connect(_cfg.DBUser, _cfg.DBPassword, _cfg.DBHost, _cfg.DBName, _cfg.DBSSLMode, _cfg.DBPort)
-	// setup cache connection
-	rdb = dbutils.ConnectRedis(_cfg.RedisAddress, _cfg.RedisAddress, _cfg.RedisDB)
-	// setup repositories
-	animalRepository := repository.NewAnimalsRepositoryImpl(db)
+	_cfg := utils.LoadConfiguration("config.json")
+	// startup databases and begin handlers
+	service := service.NewService(&_cfg)
+
 	// get an engine instance
 	r := gin.Default()
 	r.ForwardedByClientIP = true
@@ -40,7 +27,6 @@ func main() {
 	r.Use(middleware.CORSMiddleware())                                       // preflight requests
 	tb := ginratelimit.NewTokenBucket(_cfg.RequestsPerMinute, 1*time.Minute) // rate limiting
 	r.Use(ginratelimit.RateLimitByIP(tb))
-	r.Use(middleware.ApiMiddleware(mu, animalRepository, rdb)) // sharing variables with routers
 
 	// connect routers
 	// middleware for connect and trace handlers
@@ -53,17 +39,18 @@ func main() {
 			c.Next()
 		}
 	})
-	r.GET("/animals", routers.GetAnimals)
-	r.HEAD("/animals", routers.GetAnimalCount)
-	r.GET("/animals/:id", routers.GetAnimalByID)
-	r.POST("/animals", routers.CreateAnimal)
-	r.PUT("/animals/:id", routers.ReplaceAnimal)
-	r.DELETE("/animals/:id", routers.DeleteAnimal)
-	r.OPTIONS("/*path", routers.OptionsHandler)                          // all URLs
-	r.PATCH("/animals/:id/description", routers.UpdateAnimalDescription) // change only description field
+	r.OPTIONS("/*path", routers.OptionsHandler) // all URLs
+
+	r.GET("/animals", service.GetAnimal)
+	r.HEAD("/animals", service.GetAnimalCount)
+	r.GET("/animals/:id", service.GetAnimal)
+	r.POST("/animals", service.CreateAnimal)
+	r.PUT("/animals/:id", service.ReplaceAnimal)
+	r.DELETE("/animals/:id", service.DeleteAnimal)
+	r.PATCH("/animals/:id/description", service.UpdateAnimalDescription) // change only description field
 
 	// setup database health checking loop every 10 seconds
-	go utils.DataBaseHealthPollingLoop(db, time.Duration(_cfg.DBHeathInterval)*time.Second)
+	go utils.DataBaseHealthPollingLoop(service.PostgresClient, time.Duration(_cfg.DBHeathInterval)*time.Second)
 	// run the server
 	err := r.Run(":3000")
 	if err != nil {

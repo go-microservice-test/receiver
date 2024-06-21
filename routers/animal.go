@@ -15,36 +15,7 @@ import (
 	"time"
 )
 
-func retrieveObjects(c *gin.Context) (sync.Mutex, repository.AnimalRepository) {
-	// retrieve middleware mutex object and repository implementation
-
-	// ideally this should communicate with result channels in handlers
-	// so that for example response is not sent twice
-	var mu sync.Mutex
-	var rp repository.AnimalRepository
-	var ok bool
-	mu, ok = c.MustGet("mutexObject").(sync.Mutex)
-	if !ok {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve mutex object"})
-	}
-	rp, ok = c.MustGet("animalRepository").(repository.AnimalRepository)
-	if !ok {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve repository implementation"})
-	}
-	return mu, rp
-}
-
-func retrieveRedisObject(c *gin.Context) *redis.Client {
-	var rdb *redis.Client
-	var ok bool
-	rdb, ok = c.MustGet("cacheObject").(*redis.Client)
-	if !ok {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to retrieve redis object"})
-	}
-	return rdb
-}
-
-func GetAnimals(c *gin.Context) {
+func GetAnimals(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository) {
 	// setting various timeouts for different handlers
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -54,12 +25,11 @@ func GetAnimals(c *gin.Context) {
 
 	// launch fetching in go-routine
 	go func() {
-		mu, rp := retrieveObjects(c)
 		mu.Lock()
 		defer mu.Unlock()
 
 		// select all records from the animals table
-		var animals, err = rp.FindAll()
+		var animals, err = (*rp).FindAll()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -89,13 +59,12 @@ func GetAnimals(c *gin.Context) {
 	}
 }
 
-func GetAnimalCount(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
+func GetAnimalCount(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	// get count from the animals table
-	count, err := rp.GetCount()
+	count, err := (*rp).GetCount()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,9 +73,7 @@ func GetAnimalCount(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func GetAnimalByID(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
-	rdb := retrieveRedisObject(c)
+func GetAnimalByID(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository, rdb *redis.Client) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -130,7 +97,7 @@ func GetAnimalByID(c *gin.Context) {
 		return
 	}
 
-	animal, err := rp.FindByID(uint(id))
+	animal, err := (*rp).FindByID(uint(id))
 	if err != nil {
 		var notFound *repository.NotFoundError
 		if errors.As(err, &notFound) {
@@ -163,8 +130,7 @@ func GetAnimalByID(c *gin.Context) {
 	return
 }
 
-func CreateAnimal(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
+func CreateAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -175,7 +141,7 @@ func CreateAnimal(c *gin.Context) {
 		return
 	}
 
-	animal, err := rp.Create(animalInput)
+	animal, err := (*rp).Create(animalInput)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -191,9 +157,7 @@ func CreateAnimal(c *gin.Context) {
 	})
 }
 
-func ReplaceAnimal(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
-	rdb := retrieveRedisObject(c)
+func ReplaceAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository, rdb *redis.Client) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -215,7 +179,7 @@ func ReplaceAnimal(c *gin.Context) {
 	if err != nil {
 		log.Fatalf("Could not delete key from Redis: %v", err)
 	}
-	animal, err := rp.Replace(uint(id), animalInput)
+	animal, err := (*rp).Replace(uint(id), animalInput)
 	if err != nil {
 		var notFound *repository.NotFoundError
 		if errors.As(err, &notFound) {
@@ -235,9 +199,7 @@ func ReplaceAnimal(c *gin.Context) {
 	})
 }
 
-func DeleteAnimal(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
-	rdb := retrieveRedisObject(c)
+func DeleteAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository, rdb *redis.Client) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -253,7 +215,7 @@ func DeleteAnimal(c *gin.Context) {
 	if err != nil {
 		log.Fatalf("Could not delete key from Redis: %v", err)
 	}
-	animal, err := rp.Delete(uint(id))
+	animal, err := (*rp).Delete(uint(id))
 	if err != nil {
 		var notFound *repository.NotFoundError
 		if errors.As(err, &notFound) {
@@ -274,9 +236,7 @@ func DeleteAnimal(c *gin.Context) {
 	})
 }
 
-func UpdateAnimalDescription(c *gin.Context) {
-	mu, rp := retrieveObjects(c)
-	rdb := retrieveRedisObject(c)
+func UpdateAnimalDescription(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository, rdb *redis.Client) {
 	// retrieving URL id param
 	id, err := strconv.Atoi(c.Param("id"))
 	// invalid id
@@ -302,7 +262,7 @@ func UpdateAnimalDescription(c *gin.Context) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	animal, err := rp.UpdateDescription(uint(id), input.Description)
+	animal, err := (*rp).UpdateDescription(uint(id), input.Description)
 	if err != nil {
 		var notFound *repository.NotFoundError
 		if errors.As(err, &notFound) {
