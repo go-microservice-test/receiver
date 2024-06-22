@@ -8,7 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go-test/db-utils/repository"
 	"go-test/models"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -31,7 +30,11 @@ func GetAnimals(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepository)
 		// select all records from the animals table
 		var animals, err = (*rp).FindAll()
 		if err != nil {
-			log.Fatal(err)
+			// log the error
+			c.Error(err)
+			// respond with an internal server error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+			return
 		}
 		// convert results into JSON parseable format
 		var resAnimalList []models.AnimalWithID
@@ -66,7 +69,11 @@ func GetAnimalCount(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposit
 	// get count from the animals table
 	count, err := (*rp).GetCount()
 	if err != nil {
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 	// set the custom item length header to number of records in DB
 	c.Header("X-Item-Length", strconv.Itoa(int(count)))
@@ -91,7 +98,12 @@ func GetAnimalByID(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposito
 		var res *models.AnimalWithID
 		err = json.Unmarshal([]byte(val), &res)
 		if err != nil {
-			log.Fatalf("Could not unmarshal JSON: %v", err)
+			// cannot unmarshal struct
+			// log the error
+			c.Error(err)
+			// respond with an internal server error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot unmarshal struct"})
+			return
 		}
 		c.JSON(http.StatusOK, res)
 		return
@@ -104,7 +116,11 @@ func GetAnimalByID(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposito
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
 		}
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 
 	var response = models.AnimalWithID{
@@ -117,7 +133,12 @@ func GetAnimalByID(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposito
 	}
 	jsonValue, err := json.Marshal(response)
 	if err != nil {
-		log.Fatalf("Could not marshal struct: %v", err)
+		// cannot marshal struct
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot marshal struct"})
+		return
 	}
 	// cache animal by id
 	err = rdb.Set(context.Background(), strconv.Itoa(id), jsonValue, 1*time.Hour).Err()
@@ -143,7 +164,11 @@ func CreateAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepositor
 
 	animal, err := (*rp).Create(animalInput)
 	if err != nil {
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 
 	// return created animal
@@ -177,7 +202,11 @@ func ReplaceAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposito
 	// invalidate cache
 	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
 	if err != nil {
-		log.Fatalf("Could not delete key from Redis: %v", err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not delete key from Redis"})
+		return
 	}
 	animal, err := (*rp).Replace(uint(id), animalInput)
 	if err != nil {
@@ -186,7 +215,11 @@ func ReplaceAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalReposito
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
 		}
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 
 	c.JSON(http.StatusOK, models.AnimalWithID{
@@ -213,7 +246,11 @@ func DeleteAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepositor
 	// invalidate cache
 	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
 	if err != nil {
-		log.Fatalf("Could not delete key from Redis: %v", err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not delete key from Redis"})
+		return
 	}
 	animal, err := (*rp).Delete(uint(id))
 	if err != nil {
@@ -222,7 +259,11 @@ func DeleteAnimal(c *gin.Context, mu *sync.Mutex, rp *repository.AnimalRepositor
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
 		}
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 
 	// send deleted animal
@@ -248,7 +289,11 @@ func UpdateAnimalDescription(c *gin.Context, mu *sync.Mutex, rp *repository.Anim
 	// invalidate cache
 	err = rdb.Del(context.Background(), strconv.Itoa(id)).Err()
 	if err != nil {
-		log.Fatalf("Could not delete key from Redis: %v", err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not delete key from Redis"})
+		return
 	}
 	// incorrect input format handling
 	var input struct {
@@ -269,7 +314,11 @@ func UpdateAnimalDescription(c *gin.Context, mu *sync.Mutex, rp *repository.Anim
 			c.JSON(http.StatusNotFound, gin.H{"error": "Animal not found"})
 			return
 		}
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
 	}
 
 	c.JSON(http.StatusOK, models.AnimalWithID{

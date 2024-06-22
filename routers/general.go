@@ -31,7 +31,11 @@ func ConnectHandler(c *gin.Context) {
 	defer func(destConn net.Conn) {
 		err := destConn.Close()
 		if err != nil {
-			log.Fatal(err)
+			// log the error
+			c.Error(err)
+			// respond with an internal server error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close destination connection"})
+			return
 		}
 	}(destConn)
 
@@ -44,7 +48,11 @@ func ConnectHandler(c *gin.Context) {
 	defer func(clientConn net.Conn) {
 		err := clientConn.Close()
 		if err != nil {
-			log.Fatal(err)
+			// log the error
+			c.Error(err)
+			// respond with an internal server error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close client connection"})
+			return
 		}
 	}(clientConn)
 
@@ -55,24 +63,41 @@ func ConnectHandler(c *gin.Context) {
 		defer func(clientConn net.Conn) {
 			err := clientConn.Close()
 			if err != nil {
-				log.Fatal(err)
+				// log the error
+				c.Error(err)
+				// respond with an internal server error
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close client connection"})
+				return
 			}
 		}(clientConn)
 		defer func(destConn net.Conn) {
 			err := destConn.Close()
 			if err != nil {
-				log.Fatal(err)
+				// log the error
+				c.Error(err)
+				// respond with an internal server error
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close destination connection"})
+				return
+
 			}
 		}(destConn)
 		_, err := io.Copy(destConn, clientConn)
 		if err != nil {
-			log.Fatal(err)
+			// log the error
+			c.Error(err)
+			// respond with an internal server error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forward traffic"})
+			return
 		}
 	}()
 
 	_, err = io.Copy(clientConn, destConn)
 	if err != nil {
-		log.Fatal(err)
+		// log the error
+		c.Error(err)
+		// respond with an internal server error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forward traffic"})
+		return
 	}
 	log.Println("Connection closed")
 }
